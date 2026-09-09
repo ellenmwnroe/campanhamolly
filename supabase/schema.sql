@@ -1,5 +1,5 @@
 create table if not exists public.tickets (
-  number integer primary key check (number between 1 and 80),
+  number integer primary key check (number between 1 and 250),
   status text not null default 'available' check (status in ('available', 'pending', 'paid')),
   buyer_name text,
   buyer_email text,
@@ -11,8 +11,11 @@ create table if not exists public.tickets (
   updated_at timestamptz not null default now()
 );
 
+alter table public.tickets drop constraint if exists tickets_number_check;
+alter table public.tickets add constraint tickets_number_check check (number between 1 and 250);
+
 insert into public.tickets (number)
-select generate_series(1, 80)
+select generate_series(1, 250)
 on conflict (number) do nothing;
 
 alter table public.tickets enable row level security;

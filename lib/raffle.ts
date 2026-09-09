@@ -1,8 +1,8 @@
 import { getSupabaseAdmin } from '@/lib/supabase-admin'
 
 export const TICKET_PRICE = 10
-export const TOTAL_NUMBERS = 80
-export const PENDING_MINUTES = 30
+export const TOTAL_NUMBERS = 250
+export const PENDING_MINUTES = 5
 
 type TicketRow = {
   number: number
@@ -31,11 +31,13 @@ export async function expireStaleReservations() {
 export async function getRaffleState() {
   await expireStaleReservations()
   const admin = getSupabaseAdmin()
+  const missing = Array.from({ length: TOTAL_NUMBERS }, (_, index) => ({ number: index + 1 }))
+  await admin.from('tickets').upsert(missing, { onConflict: 'number', ignoreDuplicates: true })
   const { data, error } = await admin.from('tickets').select('number, status, reserved_at')
   if (error) throw new Error(error.message)
 
   const tickets = (data ?? []) as TicketRow[]
-  const taken = tickets.filter((ticket) => ticket.status !== 'available').map((ticket) => ticket.number)
+  const taken = tickets.filter((ticket) => ticket.status === 'paid' || ticket.status === 'pending').map((ticket) => ticket.number)
   const raised = tickets.filter((ticket) => ticket.status === 'paid').length * TICKET_PRICE
-  return { taken, raised, tickets }
+  return { taken, raised, tickets, total: TOTAL_NUMBERS }
 }

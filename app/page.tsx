@@ -4,7 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, Check, Copy, Heart, Sparkles, X } from 'lucide-react'
 
 const goal = 2500
-const totalNumbers = 80
+const totalNumbers = 250
+const pixWindowMs = 5 * 60 * 1000
 const photos = [
   '/molly-1.jpeg',
   '/molly-2.jpeg',
@@ -31,8 +32,13 @@ export default function Page() {
   const [qrCode, setQrCode] = useState('')
   const [qrCodeBase64, setQrCodeBase64] = useState('')
   const [copied, setCopied] = useState(false)
+  const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null)
+  const [pixRemaining, setPixRemaining] = useState(pixWindowMs)
   const progress = Math.min(100, Math.round((raised / goal) * 100))
   const pixReady = Boolean(qrCodeBase64 || qrCode)
+  const pixExpired = pixReady && pixExpiresAt !== null && pixRemaining <= 0
+  const pixBar = Math.max(0, Math.min(100, (pixRemaining / pixWindowMs) * 100))
+  const pixClock = `${Math.floor(pixRemaining / 60000)}:${String(Math.floor((pixRemaining % 60000) / 1000)).padStart(2, '0')}`
 
   useEffect(() => {
     let cancelled = false
@@ -44,16 +50,35 @@ export default function Page() {
       const taken = (payload.taken ?? []).map(Number)
       setTakenNumbers(new Set(taken))
       setRaised(Number(payload.raised) || 0)
-      setSelected((current) => current.filter((number) => !taken.includes(number)))
     }
 
     loadTickets()
-    const interval = window.setInterval(loadTickets, 15000)
+    const interval = window.setInterval(loadTickets, 10000)
     return () => {
       cancelled = true
       window.clearInterval(interval)
     }
   }, [])
+
+  useEffect(() => {
+    if (!pixExpiresAt) {
+      setPixRemaining(pixWindowMs)
+      return
+    }
+    const tick = () => setPixRemaining(Math.max(0, pixExpiresAt - Date.now()))
+    tick()
+    const interval = window.setInterval(tick, 250)
+    return () => window.clearInterval(interval)
+  }, [pixExpiresAt])
+
+  useEffect(() => {
+    if (!pixExpired) return
+    void fetch('/api/tickets').then(async (response) => {
+      const payload = await response.json().catch(() => ({ taken: [], raised: 0 }))
+      setTakenNumbers(new Set((payload.taken ?? []).map(Number)))
+      setRaised(Number(payload.raised) || 0)
+    })
+  }, [pixExpired])
 
   const toggleNumber = (number: number) => {
     if (takenNumbers.has(number)) return
@@ -67,6 +92,8 @@ export default function Page() {
     setQrCode('')
     setQrCodeBase64('')
     setCopied(false)
+    setPixExpiresAt(null)
+    setPixRemaining(pixWindowMs)
   }
 
   const createPix = async (event: React.SyntheticEvent<HTMLFormElement>) => {
@@ -89,6 +116,8 @@ export default function Page() {
       }
       setQrCode(payload.qrCode ?? '')
       setQrCodeBase64(payload.qrCodeBase64 ?? '')
+      setPixExpiresAt(Date.now() + pixWindowMs)
+      setPixRemaining(pixWindowMs)
       setTakenNumbers((current) => new Set([...current, ...selected]))
     } catch (error) {
       setPixError(error instanceof Error ? error.message : 'Não foi possível gerar o Pix.')
@@ -164,7 +193,7 @@ export default function Page() {
 
       <section id="tratamento" className="bg-forest px-5 py-24 text-cream md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-mint">O plano</p><h2 className="mt-5 max-w-2xl font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] md:text-7xl">O que precisa<br />ser <em className="font-serif font-normal text-mint">feito.</em></h2></div><p className="max-w-xs text-sm leading-6 text-cream/60">R$ 2.000 serão destinados aos procedimentos e cirurgia da Molly.</p></div><div className="mt-16 grid gap-px overflow-hidden border border-cream/20 md:grid-cols-4">{treatment.map(([number, title, copy]) => <article key={number} className="group min-h-64 border-b border-cream/20 bg-forest p-6 transition-colors hover:bg-forest-light md:border-b-0 md:border-r last:border-r-0"><span className="font-mono text-xs text-coral">{number}</span><h3 className="mt-20 text-xl font-bold uppercase tracking-[-0.03em]">{title}</h3><p className="mt-4 text-sm leading-6 text-cream/60">{copy}</p></article>)}</div><div className="mt-16 border-t border-cream/20 pt-10"><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-mint">Exames — R$ 500</p><p className="mt-4 max-w-lg text-sm leading-7 text-cream/65">RX lateral do tórax, ecodopplercardiograma, hemograma, uréia, creatinina e ALT.</p></div><p className="max-w-xs font-serif text-xl italic leading-snug text-cream">Tudo o que a Molly precisa para seguir com segurança.</p></div></div></div></section>
 
-      <section id="rifa" className="bg-butter px-5 py-24 md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Uma forma de ajudar</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Ajude a Molly<br />e concorra a<br /><em className="font-serif font-normal text-coral">R$ 500.</em></h2><p className="mt-6 max-w-sm border-l-4 border-coral bg-cream/80 px-4 py-3 text-sm font-bold leading-6 text-forest">O sorteio vai ser no Instagram <a href="https://www.instagram.com/ellenmwnroe" target="_blank" rel="noreferrer" className="text-coral underline decoration-2 underline-offset-4">@ellenmwnroe</a>, dia 30 às 16h30.</p><p className="mt-8 max-w-sm text-base leading-7 text-forest/70">Cada número custa R$ 10 e todo o valor arrecadado será destinado aos custos do tratamento. Escolha quantos quiser.</p><div className="mt-10 grid max-w-sm grid-cols-2 gap-2 text-sm text-forest/70"><span>R$ 10 → 1 número</span><span>R$ 20 → 2 números</span><span>R$ 50 → 5 números</span><span>R$ 100 → 10 números</span></div></div><div><div className="mb-5 flex items-end justify-between"><div><p className="text-sm font-bold text-forest">Escolha seus números</p><p className="mt-1 text-xs text-forest/55">Os riscados já foram reservados.</p></div><span className="font-mono text-xs text-forest/55">{selected.length}/{totalNumbers}</span></div><div className="grid grid-cols-5 gap-2 sm:grid-cols-8">{Array.from({ length: totalNumbers }, (_, index) => index + 1).map((number) => { const reserved = takenNumbers.has(number); const active = selected.includes(number); return <button key={number} type="button" disabled={reserved} onClick={() => toggleNumber(number)} aria-label={`Número ${String(number).padStart(3, '0')}${reserved ? ', reservado' : ''}`} className={`relative aspect-square rounded-sm border font-mono text-xs transition-all ${reserved ? 'cursor-not-allowed border-forest/10 bg-forest/5 text-forest/25 line-through' : active ? 'border-coral bg-coral text-cream shadow-lg' : 'border-forest/20 bg-cream text-forest hover:-translate-y-1 hover:border-coral'}`}>{String(number).padStart(3, '0')}</button> })}</div>{selected.length > 0 && <div className="mt-7 border-t border-forest/20 pt-5"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-forest/55">Seus números</p><p className="mt-2 max-w-sm font-mono text-sm text-forest">{formattedSelection.join('  ·  ')}</p><p className="mt-2 text-sm text-forest/65">{selected.length} {selected.length === 1 ? 'número' : 'números'} · R$ {selected.length * 10}</p></div><button type="button" onClick={() => setPaymentOpen(true)} className="rounded-full bg-forest px-6 py-4 text-xs font-bold uppercase tracking-[0.14em] text-cream transition hover:bg-coral">Continuar <ArrowUpRight className="ml-2 inline h-4 w-4" /></button></div></div>}</div></div></div></section>
+      <section id="rifa" className="bg-butter px-5 py-24 md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Uma forma de ajudar</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Ajude a Molly<br />e concorra a<br /><em className="font-serif font-normal text-coral">R$ 500.</em></h2><p className="mt-6 max-w-sm border-l-4 border-coral bg-cream/80 px-4 py-3 text-sm font-bold leading-6 text-forest">O sorteio vai ser no Instagram <a href="https://www.instagram.com/ellenmwnroe" target="_blank" rel="noreferrer" className="text-coral underline decoration-2 underline-offset-4">@ellenmwnroe</a>, dia 30 às 16h30.</p><p className="mt-8 max-w-sm text-base leading-7 text-forest/70">Cada número custa R$ 10 e todo o valor arrecadado será destinado aos custos do tratamento. Escolha quantos quiser.</p><div className="mt-10 grid max-w-sm grid-cols-2 gap-2 text-sm text-forest/70"><span>R$ 10 → 1 número</span><span>R$ 20 → 2 números</span><span>R$ 50 → 5 números</span><span>R$ 100 → 10 números</span></div></div><div><div className="mb-5 flex items-end justify-between"><div><p className="text-sm font-bold text-forest">Escolha seus números</p><p className="mt-1 text-xs text-forest/55">Os riscados já foram pagos ou estão reservados por 5 minutos.</p></div><span className="font-mono text-xs text-forest/55">{takenNumbers.size}/{totalNumbers}</span></div><div className="grid grid-cols-5 gap-2 sm:grid-cols-8">{Array.from({ length: totalNumbers }, (_, index) => index + 1).map((number) => { const reserved = takenNumbers.has(number); const active = selected.includes(number); return <button key={number} type="button" disabled={reserved} onClick={() => toggleNumber(number)} aria-label={`Número ${String(number).padStart(3, '0')}${reserved ? ', indisponível' : ''}`} className={`relative aspect-square rounded-sm border font-mono text-xs transition-all ${reserved ? 'cursor-not-allowed border-forest/10 bg-forest/5 text-forest/25 line-through' : active ? 'border-coral bg-coral text-cream shadow-lg' : 'border-forest/20 bg-cream text-forest hover:-translate-y-1 hover:border-coral'}`}>{String(number).padStart(3, '0')}</button> })}</div>{selected.length > 0 && <div className="mt-7 border-t border-forest/20 pt-5"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-forest/55">Seus números</p><p className="mt-2 max-w-sm font-mono text-sm text-forest">{formattedSelection.join('  ·  ')}</p><p className="mt-2 text-sm text-forest/65">{selected.length} {selected.length === 1 ? 'número' : 'números'} · R$ {selected.length * 10}</p></div><button type="button" onClick={() => setPaymentOpen(true)} className="rounded-full bg-forest px-6 py-4 text-xs font-bold uppercase tracking-[0.14em] text-cream transition hover:bg-coral">Continuar <ArrowUpRight className="ml-2 inline h-4 w-4" /></button></div></div>}</div></div></div></section>
 
       <section id="transparencia" className="mx-auto max-w-7xl px-5 py-24 md:px-10 md:py-32"><div className="grid gap-14 md:grid-cols-2"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Prestação de contas</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Pra onde vai<br />o <em className="font-serif font-normal text-coral">dinheiro?</em></h2><p className="mt-8 max-w-sm text-base leading-7 text-forest/65">A ideia é manter tudo aberto: orçamentos, comprovantes e atualizações do tratamento entram aqui conforme forem acontecendo.</p></div><div className="divide-y divide-forest/15 border-y border-forest/15">{[['Procedimentos e cirurgia', 'R$ 2.000'], ['Exames', 'R$ 500'], ['Total', 'R$ 2.500']].map(([label, value], index) => <div key={label} className={`flex items-center justify-between py-5 ${index === 2 ? 'font-bold text-coral' : 'text-forest'}`}><span className="text-sm uppercase tracking-[0.12em]">{label}</span><span className="font-mono text-sm">{value}</span></div>)}</div></div></section>
 
@@ -213,8 +242,24 @@ export default function Page() {
                   {pixLoading ? 'Gerando Pix...' : 'Gerar Pix'}
                 </button>
               </form>
+            ) : pixExpired ? (
+              <div className="mt-7 rounded-3xl border border-coral/30 bg-background p-6 text-center">
+                <p className="font-sans text-2xl font-black tracking-[-0.05em] text-forest">O tempo acabou.</p>
+                <p className="mt-3 text-sm leading-6 text-forest/70">Os números voltaram a ficar livres. Se ainda quiser ajudar, é só escolher de novo e gerar outro Pix.</p>
+                <button type="button" onClick={closePayment} className="mt-6 w-full rounded-full bg-coral py-4 text-xs font-bold uppercase tracking-[0.15em] text-cream transition hover:bg-forest">Escolher de novo</button>
+              </div>
             ) : (
               <div className="mt-7">
+                <div className="mb-5 rounded-2xl border border-forest/15 bg-background p-4">
+                  <div className="mb-2 flex items-end justify-between gap-3">
+                    <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-forest/55">Tempo para pagar</p>
+                    <p className={`font-mono text-lg font-bold ${pixRemaining <= 60_000 ? 'text-coral' : 'text-forest'}`}>{pixClock}</p>
+                  </div>
+                  <div className="h-2.5 overflow-hidden rounded-full bg-forest/10">
+                    <div className={`h-full rounded-full transition-[width] duration-200 ${pixRemaining <= 60_000 ? 'bg-coral' : 'bg-forest'}`} style={{ width: `${pixBar}%` }} />
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-forest/60">Se o Pix não cair em 5 minutos, esses números são liberados de novo.</p>
+                </div>
                 {qrCodeBase64 && (
                   <div className="flex flex-col items-center rounded-3xl border border-forest/15 bg-background p-6">
                     <img src={`data:image/png;base64,${qrCodeBase64}`} alt="QR Code Pix" className="h-52 w-52 rounded-xl bg-cream p-2" />
@@ -227,7 +272,6 @@ export default function Page() {
                     {copied ? 'Código copiado' : 'Copiar código Pix'}
                   </button>
                 )}
-                <p className="mt-5 text-center text-xs leading-5 text-forest/55">A reserva só é confirmada depois da compensação do Pix.</p>
               </div>
             )}
 

@@ -44,7 +44,7 @@ export async function POST(request: Request) {
 
     if (unavailable.length > 0 || (current ?? []).length !== numbers.length) {
       return NextResponse.json(
-        { error: 'Alguns números acabaram de ser reservados. Escolha outros.', taken: unavailable },
+        { error: 'Alguns números já estão reservados ou pagos. Escolha outros.', taken: unavailable },
         { status: 409 },
       )
     }
@@ -103,7 +103,7 @@ export async function POST(request: Request) {
     if (reserveError) throw reserveError
     if ((reserved ?? []).length !== numbers.length) {
       return NextResponse.json(
-        { error: 'Alguns números acabaram de ser reservados. Escolha outros.', taken: numbers },
+        { error: 'Alguns números já estão reservados ou pagos. Escolha outros.', taken: numbers },
         { status: 409 },
       )
     }
