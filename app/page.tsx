@@ -8,10 +8,10 @@ const goal = 2500
 const raised = 840
 const totalNumbers = 80
 const photos = [
-  'https://images.unsplash.com/photo-1558788353-f76d92427f16?auto=format&fit=crop&w=1000&q=85',
-  'https://images.unsplash.com/photo-1587300003388-59208cc962cb?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1548199973-03cce0bbc87b?auto=format&fit=crop&w=900&q=85',
-  'https://images.unsplash.com/photo-1544568100-847a948585b9?auto=format&fit=crop&w=900&q=85',
+  '/molly-1.jpeg',
+  '/molly-2.jpeg',
+  '/molly-3.jpeg',
+  '/molly-4.jpeg',
 ]
 const treatment = [
   ['01', 'Cirurgia', 'Anestesia geral inalatória com monitoração cardíaca.'],
@@ -113,7 +113,6 @@ export default function Page() {
         <div className="relative mx-auto h-[470px] w-full max-w-[480px] md:h-[580px]">
           <div className="absolute right-2 top-5 h-[390px] w-[78%] rotate-3 overflow-hidden bg-cream p-3 shadow-xl md:h-[500px]"><img src={photos[0]} alt="Cachorro olhando para a câmera em um momento ensolarado" className="h-full w-full object-cover grayscale-[15%]" /></div>
           <div className="absolute bottom-4 left-0 w-44 -rotate-6 bg-cream p-2 pb-7 shadow-lg md:w-56"><img src={photos[1]} alt="Cachorro descansando" className="h-44 w-full object-cover md:h-56" /></div>
-          <div className="absolute left-2 top-36 -rotate-12 font-serif text-2xl italic text-coral md:top-44">essa é a Molly <span aria-hidden="true">♡</span></div>
           <div className="absolute bottom-6 right-1 rotate-6 bg-mint px-4 py-3 font-serif text-lg italic text-forest shadow-md md:bottom-20">vai dar certo.</div>
           <div className="absolute right-12 top-0 h-10 w-28 rotate-6 bg-coral/70" />
         </div>
