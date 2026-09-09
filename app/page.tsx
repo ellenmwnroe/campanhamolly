@@ -2,10 +2,8 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { ArrowUpRight, Check, Copy, Heart, Sparkles, X } from 'lucide-react'
-import { supabase } from '@/lib/supabase'
 
 const goal = 2500
-const raised = 840
 const totalNumbers = 80
 const photos = [
   '/molly-1.jpeg',
@@ -23,6 +21,7 @@ const treatment = [
 export default function Page() {
   const [selected, setSelected] = useState<number[]>([])
   const [takenNumbers, setTakenNumbers] = useState<Set<number>>(new Set())
+  const [raised, setRaised] = useState(0)
   const [paymentOpen, setPaymentOpen] = useState(false)
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
@@ -32,21 +31,28 @@ export default function Page() {
   const [qrCode, setQrCode] = useState('')
   const [qrCodeBase64, setQrCodeBase64] = useState('')
   const [copied, setCopied] = useState(false)
-  const progress = Math.round((raised / goal) * 100)
+  const progress = Math.min(100, Math.round((raised / goal) * 100))
   const pixReady = Boolean(qrCodeBase64 || qrCode)
 
   useEffect(() => {
     let cancelled = false
 
     async function loadTickets() {
-      if (!supabase) return
-      const { data, error } = await supabase.from('tickets').select('number, status')
-      if (cancelled || error || !data) return
-      setTakenNumbers(new Set(data.filter((ticket) => ticket.status !== 'available').map((ticket) => ticket.number)))
+      const response = await fetch('/api/tickets')
+      const payload = await response.json().catch(() => ({ taken: [], raised: 0 }))
+      if (cancelled) return
+      const taken = (payload.taken ?? []).map(Number)
+      setTakenNumbers(new Set(taken))
+      setRaised(Number(payload.raised) || 0)
+      setSelected((current) => current.filter((number) => !taken.includes(number)))
     }
 
     loadTickets()
-    return () => { cancelled = true }
+    const interval = window.setInterval(loadTickets, 15000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
   }, [])
 
   const toggleNumber = (number: number) => {
@@ -74,9 +80,16 @@ export default function Page() {
         body: JSON.stringify({ numbers: selected, name, email, phone }),
       })
       const payload = await response.json()
-      if (!response.ok) throw new Error(payload.error || 'Não foi possível gerar o Pix.')
+      if (!response.ok) {
+        if (Array.isArray(payload.taken)) {
+          setTakenNumbers((current) => new Set([...current, ...payload.taken.map(Number)]))
+          setSelected((current) => current.filter((number) => !payload.taken.includes(number)))
+        }
+        throw new Error(payload.error || 'Não foi possível gerar o Pix.')
+      }
       setQrCode(payload.qrCode ?? '')
       setQrCodeBase64(payload.qrCodeBase64 ?? '')
+      setTakenNumbers((current) => new Set([...current, ...selected]))
     } catch (error) {
       setPixError(error instanceof Error ? error.message : 'Não foi possível gerar o Pix.')
     } finally {
@@ -97,7 +110,7 @@ export default function Page() {
       <header className="mx-auto flex max-w-7xl items-center justify-between px-5 py-6 md:px-10">
         <a href="#top" className="font-serif text-xl italic text-forest">molly<span className="text-coral">.</span></a>
         <nav className="hidden items-center gap-7 text-[11px] font-bold uppercase tracking-[0.16em] text-forest/70 md:flex">
-          <a href="#historia" className="transition-colors hover:text-forest">História</a><a href="#tratamento" className="transition-colors hover:text-forest">Tratamento</a><a href="#ajudar" className="transition-colors hover:text-forest">Ajudar</a><a href="#transparencia" className="transition-colors hover:text-forest">Transparência</a>
+          <a href="#historia" className="transition-colors hover:text-forest">História</a><a href="#quem-sou" className="transition-colors hover:text-forest">Quem sou</a><a href="#tratamento" className="transition-colors hover:text-forest">Tratamento</a><a href="#ajudar" className="transition-colors hover:text-forest">Ajudar</a><a href="#transparencia" className="transition-colors hover:text-forest">Transparência</a>
         </nav>
         <a href="#rifa" className="rounded-full bg-forest px-4 py-2 text-[10px] font-bold uppercase tracking-[0.16em] text-cream transition-transform hover:-translate-y-0.5">Quero ajudar</a>
       </header>
@@ -118,23 +131,50 @@ export default function Page() {
         </div>
       </section>
 
-      <section className="bg-mint px-5 py-12 md:px-10"><div className="mx-auto grid max-w-7xl items-center gap-8 md:grid-cols-[0.8fr_1fr_1fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-forest/60">Meta aproximada</p><p className="mt-2 font-sans text-5xl font-black tracking-[-0.06em] text-forest">R$ 2.500</p><p className="mt-2 text-sm text-forest/65">cirurgia + exames + tratamento</p></div><div><div className="mb-3 flex justify-between text-sm font-bold text-forest"><span>R$ 840 arrecadados</span><span>{progress}%</span></div><div className="h-3 overflow-hidden rounded-full bg-cream/70"><div className="h-full rounded-full bg-coral transition-all duration-700" style={{ width: `${progress}%` }} /></div></div><p className="font-serif text-xl italic text-forest md:text-right">A gente está chegando lá.</p></div></section>
+      <section className="bg-mint px-5 py-12 md:px-10"><div className="mx-auto grid max-w-7xl items-center gap-8 md:grid-cols-[0.8fr_1fr_1fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-forest/60">Meta aproximada</p><p className="mt-2 font-sans text-5xl font-black tracking-[-0.06em] text-forest">R$ 2.500</p><p className="mt-2 text-sm text-forest/65">cirurgia + exames + tratamento</p></div><div><div className="mb-3 flex justify-between text-sm font-bold text-forest"><span>R$ {raised.toLocaleString('pt-BR')} arrecadados</span><span>{progress}%</span></div><div className="h-3 overflow-hidden rounded-full bg-cream/70"><div className="h-full rounded-full bg-coral transition-all duration-700" style={{ width: `${progress}%` }} /></div></div><p className="font-serif text-xl italic text-forest md:text-right">A gente está chegando lá.</p></div></section>
 
-      <section id="historia" className="mx-auto max-w-7xl px-5 py-24 md:px-10 md:py-36"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr] md:gap-24"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">A história</p><h2 className="mt-5 max-w-sm font-sans text-5xl font-black leading-[0.92] tracking-[-0.06em] text-forest md:text-7xl">Antes de ser um diagnóstico, ela é <em className="font-serif font-normal text-coral">a Molly.</em></h2></div><div className="max-w-xl text-[17px] leading-8 text-forest/75"><p>A Molly é daquelas cachorras que chegam ocupando espaço. No sofá, no colo, na rotina. Ela tem um jeito muito próprio de pedir carinho e uma energia que faz a casa parecer mais viva.</p><p className="mt-6">Recentemente, descobrimos alguns nódulos nas mamas. O diagnóstico confirmou o câncer e trouxe uma lista de coisas que precisam acontecer: exames, a retirada dos nódulos, a retirada do útero e acompanhamento depois da cirurgia.</p><p className="mt-6">Os custos foram orçados em R$ 2.500: R$ 2.000 para procedimentos e cirurgia, e R$ 500 para os exames. A gente está tentando juntar esse valor do jeito que consegue — contando a história dela e convidando quem puder a fazer parte.</p><p className="mt-8 font-serif text-2xl italic text-forest">Ela ainda tem muito passeio pela frente.</p></div></div><div className="relative mt-16 grid gap-5 md:grid-cols-[1.3fr_0.7fr]"><img src={photos[2]} alt="Cachorro correndo ao ar livre" className="h-[360px] w-full object-cover md:h-[510px]" /><div className="flex flex-col justify-end bg-cream p-7 md:p-10"><p className="font-serif text-3xl italic leading-tight text-forest">“um dia de cada vez, com o rabo abanando.”</p><p className="mt-8 text-[10px] font-bold uppercase tracking-[0.18em] text-coral">— quem conhece a Molly</p></div></div></section>
+      <section id="historia" className="mx-auto max-w-7xl px-5 py-24 md:px-10 md:py-36"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr] md:gap-24"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">A história</p><h2 className="mt-5 max-w-sm font-sans text-5xl font-black leading-[0.92] tracking-[-0.06em] text-forest md:text-7xl">Antes de ser um diagnóstico, ela é <em className="font-serif font-normal text-coral">a Molly.</em></h2></div>
+      <div className="max-w-xl text-[17px] leading-8 text-forest/75">
+        <p>A Molly sempre foi uma cachorrinha extremamente animada e carinhosa. Daquelas que chegam ocupando espaço no sofá, no colo e na rotina. Quando era mais nova, vivia na janela espiando o movimento parecendo um gatinho e adorava correr onde tivesse oportunidade. Hoje, as grandes paixões dela são um ar-condicionado geladinho, roer um bom osso e fazer festa para absolutamente qualquer visita que chegue em casa. Ela é, acima de tudo, uma cachorrinha muito feliz.</p>
+        
+        <p className="mt-6">Recentemente, descobrimos alguns nódulos nas mamas. O diagnóstico confirmou o câncer e trouxe uma lista de coisas que precisam acontecer: exames, a cirurgia para a retirada dos nódulos, a retirada do útero e acompanhamento depois da cirurgia.</p>
+        
+        <p className="mt-6">Os custos foram orçados em R$ 2.500: R$ 2.000 para procedimentos e cirurgia, e R$ 500 para os exames. A gente está tentando juntar esse valor do jeito que consegue, contando a história dela e convidando quem puder a fazer parte.</p>
+        
+        <p className="mt-8 font-serif text-2xl italic text-forest">Ela ainda tem muito osso pra roer e ar-condicionado pra curtir.</p>
+      </div>
+      </div></section>
+
+      <section id="quem-sou" className="bg-cream px-5 py-24 md:px-10 md:py-32">
+        <div className="mx-auto grid max-w-7xl items-stretch gap-5 md:grid-cols-[1fr_1.1fr]">
+          <img src={photos[2]} alt="Molly em casa" className="h-[360px] w-full object-cover md:h-auto md:min-h-[520px]" />
+          <div className="flex flex-col justify-center bg-background p-7 md:p-12">
+            <p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Quem está por trás</p>
+            <h2 className="mt-5 font-sans text-5xl font-black leading-[0.92] tracking-[-0.06em] text-forest md:text-6xl">Oi, eu sou a <em className="font-serif font-normal text-coral">Ellen Monroe.</em></h2>
+            <div className="mt-8 max-w-lg space-y-5 text-[17px] leading-8 text-forest/75">
+              <p>Tenho 20 anos, sou estudante de TI e essa campanha é minha. Não é empresa, não é perfil fake e não é golpe: sou eu pedindo ajuda pela Molly.</p>
+              <p>A casa é cheia. Além dos meus pais, somos eu, três cachorros dois são filhos da Molly, e uma gatinha. A Molly não é só um pet. Ela é parte da rotina, do colo e da família que a gente construiu juntas.</p>
+              <p>Nesse momento, o tratamento dela passou do que eu consigo sozinha. Por isso abri essa vaquinha: pra juntar o valor da cirurgia e dos exames, com transparência, e pra ela continuar em casa com a gente.</p>
+            </div>
+            <p className="mt-10 font-serif text-2xl italic leading-tight text-forest">“minha companheira desde sempre”</p>
+            <p className="mt-4 text-[10px] font-bold uppercase tracking-[0.18em] text-coral">— Ellen Monroe</p>
+          </div>
+        </div>
+      </section>
 
       <section id="tratamento" className="bg-forest px-5 py-24 text-cream md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="flex flex-col justify-between gap-6 md:flex-row md:items-end"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-mint">O plano</p><h2 className="mt-5 max-w-2xl font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] md:text-7xl">O que precisa<br />ser <em className="font-serif font-normal text-mint">feito.</em></h2></div><p className="max-w-xs text-sm leading-6 text-cream/60">R$ 2.000 serão destinados aos procedimentos e cirurgia da Molly.</p></div><div className="mt-16 grid gap-px overflow-hidden border border-cream/20 md:grid-cols-4">{treatment.map(([number, title, copy]) => <article key={number} className="group min-h-64 border-b border-cream/20 bg-forest p-6 transition-colors hover:bg-forest-light md:border-b-0 md:border-r last:border-r-0"><span className="font-mono text-xs text-coral">{number}</span><h3 className="mt-20 text-xl font-bold uppercase tracking-[-0.03em]">{title}</h3><p className="mt-4 text-sm leading-6 text-cream/60">{copy}</p></article>)}</div><div className="mt-16 border-t border-cream/20 pt-10"><div className="flex flex-col gap-5 md:flex-row md:items-start md:justify-between"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-mint">Exames — R$ 500</p><p className="mt-4 max-w-lg text-sm leading-7 text-cream/65">RX lateral do tórax, ecodopplercardiograma, hemograma, uréia, creatinina e ALT.</p></div><p className="max-w-xs font-serif text-xl italic leading-snug text-cream">Tudo o que a Molly precisa para seguir com segurança.</p></div></div></div></section>
 
-      <section id="rifa" className="bg-butter px-5 py-24 md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Uma forma de ajudar</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Ajude a Molly<br />e concorra a<br /><em className="font-serif font-normal text-coral">R$ 500.</em></h2><p className="mt-8 max-w-sm text-base leading-7 text-forest/70">Cada número custa R$ 10 e todo o valor arrecadado será destinado aos custos do tratamento. Escolha quantos quiser.</p><div className="mt-10 grid max-w-sm grid-cols-2 gap-2 text-sm text-forest/70"><span>R$ 10 → 1 número</span><span>R$ 20 → 2 números</span><span>R$ 50 → 5 números</span><span>R$ 100 → 10 números</span></div></div><div><div className="mb-5 flex items-end justify-between"><div><p className="text-sm font-bold text-forest">Escolha seus números</p><p className="mt-1 text-xs text-forest/55">Os riscados já foram reservados.</p></div><span className="font-mono text-xs text-forest/55">{selected.length}/{totalNumbers}</span></div><div className="grid grid-cols-5 gap-2 sm:grid-cols-8">{Array.from({ length: totalNumbers }, (_, index) => index + 1).map((number) => { const reserved = takenNumbers.has(number); const active = selected.includes(number); return <button key={number} type="button" disabled={reserved} onClick={() => toggleNumber(number)} aria-label={`Número ${String(number).padStart(3, '0')}${reserved ? ', reservado' : ''}`} className={`relative aspect-square rounded-sm border font-mono text-xs transition-all ${reserved ? 'cursor-not-allowed border-forest/10 bg-forest/5 text-forest/25 line-through' : active ? 'border-coral bg-coral text-cream shadow-lg' : 'border-forest/20 bg-cream text-forest hover:-translate-y-1 hover:border-coral'}`}>{String(number).padStart(3, '0')}</button> })}</div>{selected.length > 0 && <div className="mt-7 border-t border-forest/20 pt-5"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-forest/55">Seus números</p><p className="mt-2 max-w-sm font-mono text-sm text-forest">{formattedSelection.join('  ·  ')}</p><p className="mt-2 text-sm text-forest/65">{selected.length} {selected.length === 1 ? 'número' : 'números'} · R$ {selected.length * 10}</p></div><button type="button" onClick={() => setPaymentOpen(true)} className="rounded-full bg-forest px-6 py-4 text-xs font-bold uppercase tracking-[0.14em] text-cream transition hover:bg-coral">Continuar <ArrowUpRight className="ml-2 inline h-4 w-4" /></button></div></div>}</div></div></div></section>
+      <section id="rifa" className="bg-butter px-5 py-24 md:px-10 md:py-32"><div className="mx-auto max-w-7xl"><div className="grid gap-14 md:grid-cols-[0.8fr_1.2fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Uma forma de ajudar</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Ajude a Molly<br />e concorra a<br /><em className="font-serif font-normal text-coral">R$ 500.</em></h2><p className="mt-6 max-w-sm border-l-4 border-coral bg-cream/80 px-4 py-3 text-sm font-bold leading-6 text-forest">O sorteio vai ser no Instagram <a href="https://www.instagram.com/ellenmwnroe" target="_blank" rel="noreferrer" className="text-coral underline decoration-2 underline-offset-4">@ellenmwnroe</a>, dia 30 às 16h30.</p><p className="mt-8 max-w-sm text-base leading-7 text-forest/70">Cada número custa R$ 10 e todo o valor arrecadado será destinado aos custos do tratamento. Escolha quantos quiser.</p><div className="mt-10 grid max-w-sm grid-cols-2 gap-2 text-sm text-forest/70"><span>R$ 10 → 1 número</span><span>R$ 20 → 2 números</span><span>R$ 50 → 5 números</span><span>R$ 100 → 10 números</span></div></div><div><div className="mb-5 flex items-end justify-between"><div><p className="text-sm font-bold text-forest">Escolha seus números</p><p className="mt-1 text-xs text-forest/55">Os riscados já foram reservados.</p></div><span className="font-mono text-xs text-forest/55">{selected.length}/{totalNumbers}</span></div><div className="grid grid-cols-5 gap-2 sm:grid-cols-8">{Array.from({ length: totalNumbers }, (_, index) => index + 1).map((number) => { const reserved = takenNumbers.has(number); const active = selected.includes(number); return <button key={number} type="button" disabled={reserved} onClick={() => toggleNumber(number)} aria-label={`Número ${String(number).padStart(3, '0')}${reserved ? ', reservado' : ''}`} className={`relative aspect-square rounded-sm border font-mono text-xs transition-all ${reserved ? 'cursor-not-allowed border-forest/10 bg-forest/5 text-forest/25 line-through' : active ? 'border-coral bg-coral text-cream shadow-lg' : 'border-forest/20 bg-cream text-forest hover:-translate-y-1 hover:border-coral'}`}>{String(number).padStart(3, '0')}</button> })}</div>{selected.length > 0 && <div className="mt-7 border-t border-forest/20 pt-5"><div className="flex flex-wrap items-end justify-between gap-5"><div><p className="text-[10px] font-bold uppercase tracking-[0.18em] text-forest/55">Seus números</p><p className="mt-2 max-w-sm font-mono text-sm text-forest">{formattedSelection.join('  ·  ')}</p><p className="mt-2 text-sm text-forest/65">{selected.length} {selected.length === 1 ? 'número' : 'números'} · R$ {selected.length * 10}</p></div><button type="button" onClick={() => setPaymentOpen(true)} className="rounded-full bg-forest px-6 py-4 text-xs font-bold uppercase tracking-[0.14em] text-cream transition hover:bg-coral">Continuar <ArrowUpRight className="ml-2 inline h-4 w-4" /></button></div></div>}</div></div></div></section>
 
       <section id="transparencia" className="mx-auto max-w-7xl px-5 py-24 md:px-10 md:py-32"><div className="grid gap-14 md:grid-cols-2"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Prestação de contas</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-7xl">Pra onde vai<br />o <em className="font-serif font-normal text-coral">dinheiro?</em></h2><p className="mt-8 max-w-sm text-base leading-7 text-forest/65">A ideia é manter tudo aberto: orçamentos, comprovantes e atualizações do tratamento entram aqui conforme forem acontecendo.</p></div><div className="divide-y divide-forest/15 border-y border-forest/15">{[['Procedimentos e cirurgia', 'R$ 2.000'], ['Exames', 'R$ 500'], ['Total', 'R$ 2.500']].map(([label, value], index) => <div key={label} className={`flex items-center justify-between py-5 ${index === 2 ? 'font-bold text-coral' : 'text-forest'}`}><span className="text-sm uppercase tracking-[0.12em]">{label}</span><span className="font-mono text-sm">{value}</span></div>)}</div></div></section>
 
-      <section className="bg-cream px-5 py-24 md:px-10"><div className="mx-auto grid max-w-7xl gap-14 md:grid-cols-[0.7fr_1.3fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Diário da Molly</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-6xl">A gente vai<br />contando por aqui.</h2></div><div className="border-l border-forest/20 pl-7 md:pl-12"><div className="relative pb-12"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-coral ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">02 SET</p><h3 className="mt-3 text-xl font-bold text-forest">Descobrimos os nódulos.</h3><p className="mt-2 text-sm leading-6 text-forest/60">Foi quando começamos a investigar e entender os próximos passos.</p></div><div className="relative pb-12"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-forest ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">05 SET</p><h3 className="mt-3 text-xl font-bold text-forest">Começamos os exames.</h3><p className="mt-2 text-sm leading-6 text-forest/60">Atualizações sobre os resultados entram aqui.</p></div><div className="relative"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full border-2 border-coral bg-cream ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">XX SET</p><h3 className="mt-3 text-xl font-bold text-forest">Cirurgia marcada.</h3></div></div></div></section>
+      <section className="bg-cream px-5 py-24 md:px-10"><div className="mx-auto grid max-w-7xl gap-14 md:grid-cols-[0.7fr_1.3fr]"><div><p className="text-[10px] font-bold uppercase tracking-[0.2em] text-coral">Diário da Molly</p><h2 className="mt-5 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] text-forest md:text-6xl">A gente vai<br />contando por aqui.</h2></div><div className="border-l border-forest/20 pl-7 md:pl-12"><div className="relative pb-12"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-coral ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">25 AGO</p><h3 className="mt-3 text-xl font-bold text-forest">Descobrimos os nódulos.</h3><p className="mt-2 text-sm leading-6 text-forest/60">Foi quando começamos a investigar e entender os próximos passos.</p></div><div className="relative pb-12"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full bg-forest ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">27 AGO</p><h3 className="mt-3 text-xl font-bold text-forest">Começamos os exames.</h3><p className="mt-2 text-sm leading-6 text-forest/60">Raio-x feito e sem metastáse</p></div><div className="relative"><span className="absolute -left-[31px] top-1 h-3 w-3 rounded-full border-2 border-coral bg-cream ring-4 ring-cream" /><p className="font-mono text-xs font-bold text-coral">30 SET</p><h3 className="mt-3 text-xl font-bold text-forest">Sorteio da Rifa.</h3><p className="mt-2 text-sm leading-6 text-forest/60">No Instagram @ellenmwnroe, às 16h30.</p></div></div></div></section>
 
       <section className="px-5 py-24 md:px-10"><div className="mx-auto max-w-7xl"><div className="grid gap-5 md:grid-cols-[0.65fr_1.35fr]"><div className="flex min-h-[360px] flex-col justify-between bg-mint p-7 md:p-10"><Sparkles className="h-7 w-7 text-coral" /><div><p className="font-serif text-3xl italic leading-tight text-forest">Pequenos gestos fazem uma história continuar.</p><p className="mt-5 text-sm text-forest/60">A Molly agradece com o olhar mais bonito que ela tem.</p></div></div><img src={photos[3]} alt="Cachorro em um momento de carinho" className="h-[360px] w-full object-cover md:h-[500px]" /></div></div></section>
 
       <section id="ajudar" className="bg-coral px-5 py-24 text-cream md:px-10 md:py-32"><div className="mx-auto max-w-4xl text-center"><Heart className="mx-auto h-8 w-8 fill-current" /><h2 className="mt-7 font-sans text-5xl font-black leading-[0.9] tracking-[-0.06em] md:text-8xl">Se você chegou<br />até aqui, <em className="font-serif font-normal">obrigada.</em></h2><p className="mx-auto mt-8 max-w-md text-lg leading-7 text-cream/80">Para você pode ser R$ 10. Para a Molly, é mais um passo em direção à cirurgia.</p><a href="#rifa" className="mt-9 inline-block rounded-full bg-forest px-7 py-5 text-xs font-bold uppercase tracking-[0.16em] text-cream transition hover:bg-cream hover:text-forest">Quero ajudar a Molly <ArrowUpRight className="ml-2 inline h-4 w-4" /></a></div></section>
 
-      <footer className="bg-forest px-5 py-10 text-cream md:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-7 md:flex-row md:items-center"><p className="font-serif text-2xl italic">feito para a Molly <span className="text-coral">♡</span></p><div className="flex flex-wrap gap-5 text-[10px] font-bold uppercase tracking-[0.16em] text-cream/60"><a href="#historia">História</a><a href="#tratamento">Tratamento</a><a href="#ajudar">Ajudar</a><a href="#transparencia">Transparência</a><span aria-label="Instagram" className="font-mono text-xs">@molly</span></div></div></footer>
+      <footer className="bg-forest px-5 py-10 text-cream md:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-7 md:flex-row md:items-center"><p className="font-serif text-2xl italic">feito para a Molly <span className="text-coral">♡</span></p><div className="flex flex-wrap gap-5 text-[10px] font-bold uppercase tracking-[0.16em] text-cream/60"><a href="#historia">História</a><a href="#quem-sou">Quem sou</a><a href="#tratamento">Tratamento</a><a href="#ajudar">Ajudar</a><a href="#transparencia">Transparência</a><a href="https://www.instagram.com/ellenmwnroe" target="_blank" rel="noreferrer" className="font-mono text-xs text-cream/80 hover:text-cream">@ellenmwnroe</a></div></div></footer>
 
       <div className="fixed bottom-4 left-4 right-4 z-20 md:hidden"><a href="#rifa" className="block rounded-full bg-coral py-4 text-center text-xs font-bold uppercase tracking-[0.16em] text-cream shadow-xl">Quero ajudar a Molly <ArrowUpRight className="ml-2 inline h-4 w-4" /></a></div>
 
