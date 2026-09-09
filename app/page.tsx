@@ -6,6 +6,15 @@ import { ArrowUpRight, Check, Copy, Heart, Sparkles, X } from 'lucide-react'
 const goal = 2500
 const totalNumbers = 250
 const pixWindowMs = 5 * 60 * 1000
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
+
+function formatWhatsApp(value: string) {
+  const digits = value.replace(/\D/g, '').slice(0, 11)
+  if (digits.length === 0) return ''
+  if (digits.length <= 2) return `(${digits}`
+  if (digits.length <= 7) return `(${digits.slice(0, 2)}) ${digits.slice(2)}`
+  return `(${digits.slice(0, 2)}) ${digits.slice(2, 7)}-${digits.slice(7)}`
+}
 const photos = [
   '/molly-1.jpeg',
   '/molly-2.jpeg',
@@ -32,6 +41,7 @@ export default function Page() {
   const [qrCode, setQrCode] = useState('')
   const [qrCodeBase64, setQrCodeBase64] = useState('')
   const [copied, setCopied] = useState(false)
+  const [rifaInView, setRifaInView] = useState(false)
   const [pixExpiresAt, setPixExpiresAt] = useState<number | null>(null)
   const [pixRemaining, setPixRemaining] = useState(pixWindowMs)
   const progress = Math.min(100, Math.round((raised / goal) * 100))
@@ -58,6 +68,14 @@ export default function Page() {
       cancelled = true
       window.clearInterval(interval)
     }
+  }, [])
+
+  useEffect(() => {
+    const section = document.getElementById('rifa')
+    if (!section) return
+    const observer = new IntersectionObserver(([entry]) => setRifaInView(entry.isIntersecting), { threshold: 0.12 })
+    observer.observe(section)
+    return () => observer.disconnect()
   }, [])
 
   useEffect(() => {
@@ -98,13 +116,23 @@ export default function Page() {
 
   const createPix = async (event: React.SyntheticEvent<HTMLFormElement>) => {
     event.preventDefault()
+    const cleanEmail = email.trim()
+    const cleanPhone = phone.replace(/\D/g, '')
+    if (!emailPattern.test(cleanEmail)) {
+      setPixError('Digite um e-mail válido.')
+      return
+    }
+    if (cleanPhone.length < 10) {
+      setPixError('Digite um WhatsApp válido, só com números.')
+      return
+    }
     setPixLoading(true)
     setPixError('')
     try {
       const response = await fetch('/api/pix/create', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ numbers: selected, name, email, phone }),
+        body: JSON.stringify({ numbers: selected, name, email: cleanEmail, phone: cleanPhone }),
       })
       const payload = await response.json()
       if (!response.ok) {
@@ -205,7 +233,7 @@ export default function Page() {
 
       <footer className="bg-forest px-5 py-10 text-cream md:px-10"><div className="mx-auto flex max-w-7xl flex-col justify-between gap-7 md:flex-row md:items-center"><p className="font-serif text-2xl italic">feito para a Molly <span className="text-coral">♡</span></p><div className="flex flex-wrap gap-5 text-[10px] font-bold uppercase tracking-[0.16em] text-cream/60"><a href="#historia">História</a><a href="#quem-sou">Quem sou</a><a href="#tratamento">Tratamento</a><a href="#ajudar">Ajudar</a><a href="#transparencia">Transparência</a><a href="https://www.instagram.com/ellenmwnroe" target="_blank" rel="noreferrer" className="font-mono text-xs text-cream/80 hover:text-cream">@ellenmwnroe</a></div></div></footer>
 
-      <div className="fixed bottom-4 left-4 right-4 z-20 md:hidden"><a href="#rifa" className="block rounded-full bg-coral py-4 text-center text-xs font-bold uppercase tracking-[0.16em] text-cream shadow-xl">Quero ajudar a Molly <ArrowUpRight className="ml-2 inline h-4 w-4" /></a></div>
+      <div className={`fixed bottom-4 left-4 right-4 z-20 md:hidden ${rifaInView || paymentOpen ? 'pointer-events-none hidden' : ''}`}><a href="#rifa" className="block rounded-full bg-coral py-4 text-center text-xs font-bold uppercase tracking-[0.16em] text-cream shadow-xl">Quero ajudar a Molly <ArrowUpRight className="ml-2 inline h-4 w-4" /></a></div>
 
       {paymentOpen && (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-forest/60 p-0 backdrop-blur-sm md:items-center md:p-5" role="dialog" aria-modal="true" aria-labelledby="payment-title">
@@ -231,11 +259,11 @@ export default function Page() {
                 </label>
                 <label className="block">
                   <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-forest/55">E-mail</span>
-                  <input required type="email" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-2xl border border-forest/20 bg-background px-4 py-3 text-sm outline-none transition focus:border-coral" placeholder="para o Mercado Pago" />
+                  <input required type="email" inputMode="email" autoComplete="email" pattern="^[^\s@]+@[^\s@]+\.[^\s@]{2,}$" value={email} onChange={(event) => setEmail(event.target.value)} className="mt-2 w-full rounded-2xl border border-forest/20 bg-background px-4 py-3 text-sm outline-none transition focus:border-coral" placeholder="seuemail@exemplo.com" />
                 </label>
                 <label className="block">
                   <span className="text-[10px] font-bold uppercase tracking-[0.16em] text-forest/55">WhatsApp</span>
-                  <input required type="tel" value={phone} onChange={(event) => setPhone(event.target.value)} className="mt-2 w-full rounded-2xl border border-forest/20 bg-background px-4 py-3 text-sm outline-none transition focus:border-coral" placeholder="para avisar se você ganhar" />
+                  <input required type="tel" inputMode="numeric" autoComplete="tel" maxLength={16} value={phone} onChange={(event) => setPhone(formatWhatsApp(event.target.value))} className="mt-2 w-full rounded-2xl border border-forest/20 bg-background px-4 py-3 text-sm outline-none transition focus:border-coral" placeholder="(11) 99999-9999" />
                 </label>
                 {pixError && <p className="text-sm text-coral">{pixError}</p>}
                 <button type="submit" disabled={pixLoading} className="mt-2 w-full rounded-full bg-forest py-4 text-xs font-bold uppercase tracking-[0.15em] text-cream transition hover:bg-coral disabled:cursor-wait disabled:opacity-70">
